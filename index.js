@@ -3,7 +3,7 @@ const bodyParser = require("body-parser");
 const cors = require("cors");
 const express = require("express");
 const app = express();
-const port = 5000;
+const port = 8000;
 const {
   PassbaseClient,
   PassbaseConfiguration,
@@ -15,39 +15,49 @@ app.use(cors());
 
 const apiKey = "SECRET_API_KEY";
 
-// call the Passbase API getIdentity endpoint with Passbase Node.js server-side library
+// Passbase Server Side SDK Configuration
 const config = new PassbaseConfiguration({
   apiKey,
   format: ResponseFormats.Json,
 });
 
-const callPassbaseAPI = async (identityAccessKey) => {
+const retrieveIdentityDetails = async (identityAccessKey) => {
   const client = new PassbaseClient(config);
   const identity = await client.getIdentityById(identityAccessKey);
-  console.log("IDENTITY INFO HERE: ", identity);
-  console.log(identity.resources)
+  console.log("IDENTITY INFO: ", identity);
+  checkIfUserIsUnderaged(identity);
 };
 
-// call the Passbase API getIdentity endpoint with Axios
-// const callWithAxios = (id) => {
-//     var config = {
-//         method: 'get',
-//         url: `https://api.passbase.com/verification/v1/identities/${id}`,
-//         headers: {
-//             'X-API-KEY': apiKey
-//         }
-//     };
-//     return new Promise((resolve, reject) => {
-//         axios(config)
-//             .then((response) => {
-//                 resolve(response.data)
-//             })
-//             .catch((error) => {
-//                 console.log(error);
-//                 reject(error)
-//             });
-//     });
-// }
+// Helper function to calculate age from a string
+const calculateAge = (dateString) => {
+  var birthday = +new Date(dateString);
+  return ~~((Date.now() - birthday) / 31557600000);
+};
+
+const checkIfUserIsUnderaged = (identity) => {
+  // These document types have a date_of_birth field
+  const documentsWithAgeProof = ["DRIVERS_LICENSE", "PASSPORT", "NATIONAL_ID"];
+
+  // Iterate over all resources that are attached to an identity
+  identity.resources.forEach((res) => {
+    const validDocumentWithAge = documentsWithAgeProof.includes(res.type);
+
+    // CHeck if the document has a date_of_birth field
+    if (validDocumentWithAge) {
+      const dob = calculateAge(res.datapoints.date_of_birth);
+      console.log(`Birthdate ${res.datapoints.date_of_birth}`);
+      console.log(`User age is ${dob}`);
+
+      if (dob >= 18) {
+        console.log("User is over 18");
+        // Provision access
+      } else {
+        console.log("User is under 18");
+        // Deny access
+      }
+    }
+  });
+};
 
 // Receive Passbase webhook events
 app.post("/passbase-webhooks", async (req, res) => {
@@ -55,15 +65,10 @@ app.post("/passbase-webhooks", async (req, res) => {
   switch (webhook.event) {
     case "VERIFICATION_REVIEWED":
       console.log("VERIFICATION_REVIEWED");
-      callPassbaseAPI(webhook.key);
-      break;
-    case "IDENTITY_AUTHENTICATED":
-      console.log("IDENTITY_AUTHENTICATED");
-      callPassbaseAPI(webhook.key);
+      retrieveIdentityDetails(webhook.key);
       break;
     case "VERIFICATION_COMPLETED":
       console.log("VERIFICATION_COMPLETED");
-      callPassbaseAPI(webhook.key);
       break;
     default:
       console.log("Couldn't process webhook event");
